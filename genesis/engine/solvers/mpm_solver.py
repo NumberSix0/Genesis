@@ -86,6 +86,7 @@ class MPMSolver(Solver):
         # dynamic particle state without gradient
         struct_particle_state_ng = ti.types.struct(
             active=gs.ti_int,
+            damage=gs.ti_float, # damage ratio
         )
 
         # static particle info
@@ -93,7 +94,6 @@ class MPMSolver(Solver):
             mat_idx=gs.ti_int,
             mass=gs.ti_float,
             default_Jp=gs.ti_float,
-            free=gs.ti_int,
             # for muscle
             muscle_group=gs.ti_int,
             muscle_direction=gs.ti_vec3,
@@ -247,6 +247,16 @@ class MPMSolver(Solver):
     # ------------------------------------------------------------------------------------
     # ----------------------------------- simulation -------------------------------------
     # ------------------------------------------------------------------------------------
+    @ti.kernel
+    def check_damage(self, f: ti.i32):
+        for i in range(self._n_particles):
+            # damage
+            S = self.particles[f, i].S
+            max_principal_strain = ti.max(S[0, 0], S[1, 1], S[2, 2])
+            damage = ti.max(0, ti.min(1.0, (max_principal_strain-1.5)/0.5))
+
+            stress *= (1 - self.damage)
+            self.particles_ng[f, i].active = False
 
     @ti.kernel
     def compute_F_tmp(self, f: ti.i32):
@@ -311,6 +321,11 @@ class MPMSolver(Solver):
     @ti.kernel
     def p2g(self, f: ti.i32):
         for i in range(self._n_particles):
+            # damage
+            max_principal_strain = ti.max(self.particles[f, i].S[0, 0], self.particles[f, i].S[1, 1], self.particles[f, i].S[2, 2])
+            damage = ti.max(0, ti.min(1.0, (max_principal_strain-1.5)/0.5))
+            if damage >= 0.8:
+                self.particles_ng[f, i].active = False
             if self.particles_ng[f, i].active:
                 # A. update F (deformation gradient), S (Sigma from SVD(F), essentially represents volume) and Jp (volume compression ratio) based on material type
                 J = self.particles[f, i].S.determinant()
@@ -347,7 +362,9 @@ class MPMSolver(Solver):
                             Jp=self.particles[f, i].Jp,
                             actu=self.particles[f, i].actu,
                             m_dir=self.particles_info[i].muscle_direction,
+                            # damage=self.particles_ng[f, i].damage,
                         )
+                stress *= (1 - damage)
                 stress = (-self.substep_dt * self._p_vol * 4 * self._inv_dx * self._inv_dx) * stress
                 affine = stress + self.particles_info[i].mass * self.particles[f, i].C
 
@@ -384,9 +401,6 @@ class MPMSolver(Solver):
                             self.particles_info[i].mass * self.particles[f, i].vel + affine @ dpos
                         )
                         self.grid[f, base - self._grid_offset + offset].mass += weight * self.particles_info[i].mass
-
-                    if self.particles_info[i].free == 0:  # non-free particles behave as boundary conditions
-                        self.grid[f, base - self._grid_offset + offset].vel_in = ti.Vector.zero(gs.ti_float, 3)
 
     @ti.kernel
     def g2p(self, f: ti.i32):
@@ -658,11 +672,11 @@ class MPMSolver(Solver):
             self.particles[f, i_global].actu = gs.ti_float(0.0)
 
             self.particles_ng[f, i_global].active = active
+            self.particles_ng[f, i_global].damage = 0
 
             self.particles_info[i_global].mat_idx = mat_idx
             self.particles_info[i_global].default_Jp = mat_default_Jp
             self.particles_info[i_global].mass = self._p_vol * mat_rho
-            self.particles_info[i_global].free = 1
             self.particles_info[i_global].muscle_group = 0
             self.particles_info[i_global].muscle_direction = ti.Vector([0.0, 0.0, 1.0], dt=gs.ti_float)
 
@@ -822,28 +836,6 @@ class MPMSolver(Solver):
                 self.particles_info[i_global].muscle_direction[j] = muscle_direction[i, j]
 
     @ti.kernel
-    def _kernel_set_free(
-        self,
-        particle_start: ti.i32,
-        n_particles: ti.i32,
-        free: ti.types.ndarray(),
-    ):
-        for i in range(n_particles):
-            i_global = i + particle_start
-            self.particles_info[i_global].free = free[i]
-
-    @ti.kernel
-    def _kernel_get_free(
-        self,
-        particle_start: ti.i32,
-        n_particles: ti.i32,
-        free: ti.types.ndarray(),
-    ):
-        for i in range(n_particles):
-            i_global = i + particle_start
-            free[i] = self.particles_info[i_global].free
-
-    @ti.kernel
     def _kernel_get_state(
         self,
         f: ti.i32,
@@ -914,7 +906,8 @@ class MPMSolver(Solver):
                     self.particles[f, self.vverts_info.support_idxs[i][j]].pos * self.vverts_info.support_weights[i][j]
                 )
             self.vverts_render[i].pos = vvert_pos
-            self.vverts_render[i].active = self.particles_render[self.vverts_info.support_idxs[i][0]].active
+            self.particles_render[i].active = self.particles_ng[f, i].active
+            # self.vverts_render[i].active = self.particles_render[self.vverts_info.support_idxs[i][0]].active
 
     def update_render_fields(self):
         self._kernel_update_render_fields(self.sim.cur_substep_local)
