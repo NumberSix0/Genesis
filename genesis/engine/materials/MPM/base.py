@@ -57,6 +57,13 @@ class Base(Material):
         ) * self._lam * J * (J - 1)
 
         return stress
+    
+    @ti.func
+    def update_damage(self, S):
+        max_principal_strain = ti.max(S[0, 0], S[1, 1], S[2, 2])
+        damage = ti.max(0, ti.min(1.0, (max_principal_strain-1.5)/0.5))
+        
+        return damage
 
     def __eq__(self, other):
         if self.__class__ is other.__class__:
