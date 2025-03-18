@@ -56,6 +56,7 @@ class MPMSolver(Solver):
         self._mats_idx = list()
         self._mats_update_F_S_Jp = list()
         self._mats_update_stress = list()
+        self._mats_update_damage = list()
 
         # boundary
         self.setup_boundary()
@@ -240,6 +241,8 @@ class MPMSolver(Solver):
             self._mats_idx.append(material._idx)
             self._mats_update_F_S_Jp.append(material.update_F_S_Jp)
             self._mats_update_stress.append(material.update_stress)
+            self._mats_update_damage.append(material.update_damage)
+            
 
     def is_active(self):
         return self.n_particles > 0
@@ -247,17 +250,6 @@ class MPMSolver(Solver):
     # ------------------------------------------------------------------------------------
     # ----------------------------------- simulation -------------------------------------
     # ------------------------------------------------------------------------------------
-    @ti.kernel
-    def check_damage(self, f: ti.i32):
-        for i in range(self._n_particles):
-            # damage
-            S = self.particles[f, i].S
-            max_principal_strain = ti.max(S[0, 0], S[1, 1], S[2, 2])
-            damage = ti.max(0, ti.min(1.0, (max_principal_strain-1.5)/0.5))
-
-            stress *= (1 - self.damage)
-            self.particles_ng[f, i].active = False
-
     @ti.kernel
     def compute_F_tmp(self, f: ti.i32):
         for i in range(self._n_particles):
@@ -321,11 +313,15 @@ class MPMSolver(Solver):
     @ti.kernel
     def p2g(self, f: ti.i32):
         for i in range(self._n_particles):
-            # damage
-            max_principal_strain = ti.max(self.particles[f, i].S[0, 0], self.particles[f, i].S[1, 1], self.particles[f, i].S[2, 2])
-            damage = ti.max(0, ti.min(1.0, (max_principal_strain-1.5)/0.5))
-            if damage >= 0.8:
-                self.particles_ng[f, i].active = False
+            # update damage
+            for mat_idx in ti.static(self._mats_idx):
+                if self.particles_info[i].mat_idx == mat_idx:
+                    self.particles_ng[f, i].damage = self._mats_update_damage[mat_idx](
+                        S=self.particles[f, i].S,
+                    )
+                if self.particles_ng[f, i].damage  >= 0.95:
+                    self.particles_ng[f, i].active = False
+
             if self.particles_ng[f, i].active:
                 # A. update F (deformation gradient), S (Sigma from SVD(F), essentially represents volume) and Jp (volume compression ratio) based on material type
                 J = self.particles[f, i].S.determinant()
@@ -364,7 +360,7 @@ class MPMSolver(Solver):
                             m_dir=self.particles_info[i].muscle_direction,
                             # damage=self.particles_ng[f, i].damage,
                         )
-                stress *= (1 - damage)
+                stress *= (1 - self.particles_ng[f, i].damage)
                 stress = (-self.substep_dt * self._p_vol * 4 * self._inv_dx * self._inv_dx) * stress
                 affine = stress + self.particles_info[i].mass * self.particles[f, i].C
 
