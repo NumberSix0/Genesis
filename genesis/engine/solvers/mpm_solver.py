@@ -82,6 +82,7 @@ class MPMSolver(Solver):
             S=gs.ti_mat3,  # SVD
             actu=gs.ti_float,  # actuation
             Jp=gs.ti_float,  # volume ratio
+            D=gs.ti_mat3  # strain rate
         )
 
         # dynamic particle state without gradient
@@ -319,7 +320,7 @@ class MPMSolver(Solver):
                     self.particles_ng[f, i].damage = self._mats_update_damage[mat_idx](
                         S=self.particles[f, i].S,
                     )
-                if self.particles_ng[f, i].damage  >= 0.95:
+                if self.particles_ng[f, i].damage  >= 0.6:
                     self.particles_ng[f, i].active = False
 
             if self.particles_ng[f, i].active:
@@ -441,12 +442,16 @@ class MPMSolver(Solver):
                 self.particles[f + 1, i].C = new_C
                 self.particles[f + 1, i].pos = new_pos
 
+                # calculate strain rate
+                new_D = 0.5 * (new_C + new_C.transpose())
+                self.particles[f + 1, i].D = new_D
             else:
                 self.particles[f + 1, i].vel = self.particles[f, i].vel
                 self.particles[f + 1, i].pos = self.particles[f, i].pos
                 self.particles[f + 1, i].C = self.particles[f, i].C
                 self.particles[f + 1, i].F = self.particles[f, i].F
                 self.particles[f + 1, i].Jp = self.particles[f, i].Jp
+                self.particles[f + 1, i].D = self.particles[f, i].D
 
             self.particles_ng[f + 1, i].active = self.particles_ng[f, i].active
 
@@ -491,6 +496,7 @@ class MPMSolver(Solver):
             self.particles[target, i].F = self.particles[source, i].F
             self.particles[target, i].C = self.particles[source, i].C
             self.particles[target, i].Jp = self.particles[source, i].Jp
+            self.particles[target, i].D = self.particles[source, i].D
             self.particles_ng[target, i].active = self.particles_ng[source, i].active
 
     @ti.kernel
@@ -501,6 +507,7 @@ class MPMSolver(Solver):
             self.particles.grad[target, i].F = self.particles.grad[source, i].F
             self.particles.grad[target, i].C = self.particles.grad[source, i].C
             self.particles.grad[target, i].Jp = self.particles.grad[source, i].Jp
+            self.particles.grad[target, i].D = self.particles.grad[source, i].D
             self.particles_ng[target, i].active = self.particles_ng[source, i].active
 
     @ti.kernel
@@ -525,6 +532,7 @@ class MPMSolver(Solver):
             self.particles.grad[i, j].U = 0
             self.particles.grad[i, j].V = 0
             self.particles.grad[i, j].S = 0
+            self.particles.grad[i, j].D = 0
 
     # ------------------------------------------------------------------------------------
     # ------------------------------------ gradient --------------------------------------
@@ -558,6 +566,10 @@ class MPMSolver(Solver):
             if state.Jp.grad is not None:
                 state.Jp.assert_contiguous()
                 self.add_grad_from_Jp(self._sim.cur_substep_local, state.Jp.grad)
+            
+            if state.D.grad is not None:
+                state.D.assert_contiguous()
+                self.add_grad_from_D(self._sim.cur_substep_local, state.D.grad)
 
     @ti.kernel
     def add_grad_from_pos(self, f: ti.i32, pos_grad: ti.types.ndarray()):
@@ -590,6 +602,13 @@ class MPMSolver(Solver):
         for i in range(self._n_particles):
             self.particles.grad[f, i].Jp += Jp_grad[i]
 
+    @ti.kernel
+    def add_grad_from_D(self, f: ti.i32, D_grad: ti.types.ndarray()):
+        for i in range(self._n_particles):
+            for j in ti.static(range(3)):
+                for k in ti.static(range(3)):
+                    self.particles.grad[f, i].D[j, k] += D_grad[i, j, k]
+
     def save_ckpt(self, ckpt_name):
         if self._sim.requires_grad:
             if ckpt_name not in self._ckpt:
@@ -599,6 +618,7 @@ class MPMSolver(Solver):
                 self._ckpt[ckpt_name]["C"] = torch.zeros((self._n_particles, 3, 3), dtype=gs.tc_float)
                 self._ckpt[ckpt_name]["F"] = torch.zeros((self._n_particles, 3, 3), dtype=gs.tc_float)
                 self._ckpt[ckpt_name]["Jp"] = torch.zeros((self._n_particles,), dtype=gs.tc_float)
+                self._ckpt[ckpt_name]["D"] = torch.zeros((self._n_particles, 3, 3), dtype=gs.tc_float)
                 self._ckpt[ckpt_name]["active"] = torch.zeros((self._n_particles,), dtype=torch.int32)
 
             self._kernel_get_state(
@@ -608,6 +628,7 @@ class MPMSolver(Solver):
                 self._ckpt[ckpt_name]["C"],
                 self._ckpt[ckpt_name]["F"],
                 self._ckpt[ckpt_name]["Jp"],
+                self._ckpt[ckpt_name]["D"],
                 self._ckpt[ckpt_name]["active"],
             )
 
@@ -635,6 +656,7 @@ class MPMSolver(Solver):
                 self._ckpt[ckpt_name]["C"],
                 self._ckpt[ckpt_name]["F"],
                 self._ckpt[ckpt_name]["Jp"],
+                self._ckpt[ckpt_name]["D"],
                 self._ckpt[ckpt_name]["active"],
             )
 
@@ -665,6 +687,7 @@ class MPMSolver(Solver):
             self.particles[f, i_global].F = ti.Matrix.identity(gs.ti_float, 3)
             self.particles[f, i_global].C = ti.Matrix.zero(gs.ti_float, 3, 3)
             self.particles[f, i_global].Jp = mat_default_Jp
+            self.particles[f, i_global].D = ti.Matrix.zero(gs.ti_float, 3, 3)
             self.particles[f, i_global].actu = gs.ti_float(0.0)
 
             self.particles_ng[f, i_global].active = active
@@ -694,6 +717,7 @@ class MPMSolver(Solver):
             self.particles[f, i_global].F = ti.Matrix.identity(gs.ti_float, 3)
             self.particles[f, i_global].C = ti.Matrix.zero(gs.ti_float, 3, 3)
             self.particles[f, i_global].Jp = self.particles_info[i_global].default_Jp
+            self.particles[f, i_global].D = ti.Matrix.zero(gs.ti_float, 3, 3)
 
     @ti.kernel
     def _kernel_set_particles_pos_grad(
@@ -841,6 +865,7 @@ class MPMSolver(Solver):
         F: ti.types.ndarray(),
         Jp: ti.types.ndarray(),
         active: ti.types.ndarray(),
+        D: ti.types.ndarray(),
     ):
         for i in range(self._n_particles):
             for j in ti.static(range(3)):
@@ -849,6 +874,7 @@ class MPMSolver(Solver):
                 for k in ti.static(range(3)):
                     C[i, j, k] = self.particles[f, i].C[j, k]
                     F[i, j, k] = self.particles[f, i].F[j, k]
+                    D[i, j, k] = self.particles[f, i].D[j, k]
             Jp[i] = self.particles[f, i].Jp
             active[i] = self.particles_ng[f, i].active
 
@@ -862,6 +888,7 @@ class MPMSolver(Solver):
         F: ti.types.ndarray(),
         Jp: ti.types.ndarray(),
         active: ti.types.ndarray(),
+        D: ti.types.ndarray(),
     ):
         for i in range(self._n_particles):
             for j in ti.static(range(3)):
@@ -870,20 +897,21 @@ class MPMSolver(Solver):
                 for k in ti.static(range(3)):
                     self.particles[f, i].C[j, k] = C[i, j, k]
                     self.particles[f, i].F[j, k] = F[i, j, k]
+                    self.particles[f, i].D[j, k] = D[i, j, k]
             self.particles[f, i].Jp = Jp[i]
             self.particles_ng[f, i].active = active[i]
 
     def get_state(self, f):
         if self.is_active():
             state = MPMSolverState(self._scene)
-            self._kernel_get_state(f, state.pos, state.vel, state.C, state.F, state.Jp, state.active)
+            self._kernel_get_state(f, state.pos, state.vel, state.C, state.F, state.Jp, state.active, state.D)
         else:
             state = None
         return state
 
     def set_state(self, f, state):
         if self.is_active():
-            self._kernel_set_state(f, state.pos, state.vel, state.C, state.F, state.Jp, state.active)
+            self._kernel_set_state(f, state.pos, state.vel, state.C, state.F, state.Jp, state.active, state.D)
 
     @ti.kernel
     def _kernel_update_render_fields(self, f: ti.i32):

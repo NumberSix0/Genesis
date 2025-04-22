@@ -220,6 +220,7 @@ class MPMEntity(ParticleEntity):
             self._solver.particles.grad[f, i_global].V = 0
             self._solver.particles.grad[f, i_global].S = 0
             self._solver.particles.grad[f, i_global].actu = 0
+            self._solver.particles.grad[f, i_global].D = 0
 
     def process_input(self, in_backward=False):
         if in_backward:
@@ -283,6 +284,7 @@ class MPMEntity(ParticleEntity):
         F: ti.types.ndarray(),
         Jp: ti.types.ndarray(),
         active: ti.types.ndarray(),
+        D: ti.types.ndarray(),
     ):
         for i in range(self.n_particles):
             i_global = i + self._particle_start
@@ -292,6 +294,7 @@ class MPMEntity(ParticleEntity):
                 for k in ti.static(range(3)):
                     C[i, j, k] = self._solver.particles[f, i_global].C[j, k]
                     F[i, j, k] = self._solver.particles[f, i_global].F[j, k]
+                    D[i, j, k] = self._solver.particles[f, i_global].D[j, k]
             Jp[i] = self._solver.particles[f, i_global].Jp
             active[i] = self._solver.particles_ng[f, i_global].active
 
@@ -331,6 +334,14 @@ class MPMEntity(ParticleEntity):
             i_global = i + self._particle_start
             self._solver.particles.grad[f, i_global].Jp += Jp_grad[i]
 
+    @ti.kernel
+    def set_frame_add_grad_D(self, f: ti.i32, D_grad: ti.types.ndarray()):
+        for i in range(self.n_particles):
+            i_global = i + self._particle_start
+            for j in ti.static(range(3)):
+                for k in ti.static(range(3)):
+                    self._solver.particles.grad[f, i_global].D[j, k] += D_grad[i, j, k]
+
     def add_grad_from_state(self, state):
         if state.pos.grad is not None:
             state.pos.assert_contiguous()
@@ -351,6 +362,10 @@ class MPMEntity(ParticleEntity):
         if state.Jp.grad is not None:
             state.Jp.assert_contiguous()
             self.set_frame_add_grad_Jp(self._sim.cur_substep_local, state.Jp.grad)
+
+        if state.D.grad is not None:
+            state.D.assert_contiguous()
+            self.set_frame_add_grad_D(self._sim.cur_substep_local, state.D.grad)
 
     @gs.assert_built
     def get_particles(self):
@@ -376,6 +391,7 @@ class MPMEntity(ParticleEntity):
             F=state.F,
             Jp=state.Jp,
             active=state.active,
+            D=state.D,
         )
 
         # we store all queried states to track gradient flow

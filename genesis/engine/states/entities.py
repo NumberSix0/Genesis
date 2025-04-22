@@ -72,6 +72,12 @@ class MPMEntityState(RBC):
             requires_grad=self._entity.scene.requires_grad,
             scene=self._entity.scene,
         )
+        self._D = gs.zeros(
+            (self._entity.n_particles, 3, 3),
+            dtype=float,
+            requires_grad=self._entity.scene.requires_grad,
+            scene=self._entity.scene,
+        )
         self._active = gs.zeros((self._entity.n_particles,), dtype=int, requires_grad=False, scene=self._entity.scene)
 
     def serializable(self):
@@ -82,6 +88,7 @@ class MPMEntityState(RBC):
         self._C = self._C.detach()
         self._F = self._F.detach()
         self._Jp = self._Jp.detach()
+        self._D = self._D.detach()
         self._active = self._active.detach()
 
     @property
@@ -112,6 +119,10 @@ class MPMEntityState(RBC):
     def Jp(self):
         return self._Jp
 
+    @property
+    def D(self):
+        return self._D
+    
     @property
     def active(self):
         return self._active
