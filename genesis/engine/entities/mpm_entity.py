@@ -285,6 +285,7 @@ class MPMEntity(ParticleEntity):
         Jp: ti.types.ndarray(),
         active: ti.types.ndarray(),
         D: ti.types.ndarray(),
+        damage: ti.types.ndarray(),
     ):
         for i in range(self.n_particles):
             i_global = i + self._particle_start
@@ -297,6 +298,7 @@ class MPMEntity(ParticleEntity):
                     D[i, j, k] = self._solver.particles[f, i_global].D[j, k]
             Jp[i] = self._solver.particles[f, i_global].Jp
             active[i] = self._solver.particles_ng[f, i_global].active
+            damage[i] = self._solver.particles_ng[f, i_global].damage
 
     @ti.kernel
     def set_frame_add_grad_pos(self, f: ti.i32, pos_grad: ti.types.ndarray()):
@@ -392,6 +394,7 @@ class MPMEntity(ParticleEntity):
             Jp=state.Jp,
             active=state.active,
             D=state.D,
+            damage=state.damage,
         )
 
         # we store all queried states to track gradient flow

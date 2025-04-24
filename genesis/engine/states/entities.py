@@ -79,6 +79,7 @@ class MPMEntityState(RBC):
             scene=self._entity.scene,
         )
         self._active = gs.zeros((self._entity.n_particles,), dtype=int, requires_grad=False, scene=self._entity.scene)
+        self._damage = gs.zeros((self._entity.n_particles,), dtype=float, requires_grad=False, scene=self._entity.scene)
 
     def serializable(self):
         self._entity = None
@@ -90,6 +91,7 @@ class MPMEntityState(RBC):
         self._Jp = self._Jp.detach()
         self._D = self._D.detach()
         self._active = self._active.detach()
+        self._damage = self._damage.detach()
 
     @property
     def entity(self):
@@ -126,6 +128,10 @@ class MPMEntityState(RBC):
     @property
     def active(self):
         return self._active
+    
+    @property
+    def damage(self):
+        return self._damage
 
 
 class SPHEntityState(RBC):

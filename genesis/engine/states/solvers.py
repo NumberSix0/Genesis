@@ -198,6 +198,7 @@ class MPMSolverState(RBC):
             (scene.sim.mpm_solver.n_particles, 3, 3), dtype=float, requires_grad=scene.requires_grad, scene=self._scene
         )
         self._active = gs.zeros((scene.sim.mpm_solver.n_particles,), dtype=int, requires_grad=False, scene=self._scene)
+        self._damage = gs.zeros((scene.sim.mpm_solver.n_particles,), dtype=float, requires_grad=False, scene=self._scene)
 
     def serializable(self):
         self._scene = None
@@ -209,6 +210,7 @@ class MPMSolverState(RBC):
         self._Jp = self._Jp.detach()
         self._D = self._D.detach()
         self._active = self._active.detach()
+        self._damage = self._damage.detach()
 
     @property
     def scene(self):
@@ -241,6 +243,10 @@ class MPMSolverState(RBC):
     @property
     def active(self):
         return self._active
+    
+    @property
+    def damage(self):
+        return self._damage
 
 
 class SPHSolverState:

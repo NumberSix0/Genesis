@@ -314,16 +314,15 @@ class MPMSolver(Solver):
     @ti.kernel
     def p2g(self, f: ti.i32):
         for i in range(self._n_particles):
-            # update damage
-            for mat_idx in ti.static(self._mats_idx):
-                if self.particles_info[i].mat_idx == mat_idx:
-                    self.particles_ng[f, i].damage = self._mats_update_damage[mat_idx](
-                        S=self.particles[f, i].S,
-                    )
-                if self.particles_ng[f, i].damage  >= 0.6:
-                    self.particles_ng[f, i].active = False
-
             if self.particles_ng[f, i].active:
+                # update damage
+                for mat_idx in ti.static(self._mats_idx):
+                    if self.particles_info[i].mat_idx == mat_idx:
+                        self.particles_ng[f, i].damage = self._mats_update_damage[mat_idx](
+                            S=self.particles[f, i].S,
+                        )
+                    if self.particles_ng[f, i].damage  >= 0.6:
+                        self.particles_ng[f, i].active = False
                 # A. update F (deformation gradient), S (Sigma from SVD(F), essentially represents volume) and Jp (volume compression ratio) based on material type
                 J = self.particles[f, i].S.determinant()
                 F_new = ti.Matrix.zero(gs.ti_float, 3, 3)
@@ -359,6 +358,7 @@ class MPMSolver(Solver):
                             Jp=self.particles[f, i].Jp,
                             actu=self.particles[f, i].actu,
                             m_dir=self.particles_info[i].muscle_direction,
+                            D=self.particles[f, i].D,
                             # damage=self.particles_ng[f, i].damage,
                         )
                 stress *= (1 - self.particles_ng[f, i].damage)
@@ -453,7 +453,9 @@ class MPMSolver(Solver):
                 self.particles[f + 1, i].Jp = self.particles[f, i].Jp
                 self.particles[f + 1, i].D = self.particles[f, i].D
 
+            # 确保damage值被传递到下一帧
             self.particles_ng[f + 1, i].active = self.particles_ng[f, i].active
+            self.particles_ng[f + 1, i].damage = self.particles_ng[f, i].damage
 
     # ------------------------------------------------------------------------------------
     # ------------------------------------ stepping --------------------------------------
@@ -498,6 +500,7 @@ class MPMSolver(Solver):
             self.particles[target, i].Jp = self.particles[source, i].Jp
             self.particles[target, i].D = self.particles[source, i].D
             self.particles_ng[target, i].active = self.particles_ng[source, i].active
+            self.particles_ng[target, i].damage = self.particles_ng[source, i].damage
 
     @ti.kernel
     def copy_grad(self, source: ti.i32, target: ti.i32):
@@ -866,6 +869,7 @@ class MPMSolver(Solver):
         Jp: ti.types.ndarray(),
         active: ti.types.ndarray(),
         D: ti.types.ndarray(),
+        damage: ti.types.ndarray(),
     ):
         for i in range(self._n_particles):
             for j in ti.static(range(3)):
@@ -877,6 +881,7 @@ class MPMSolver(Solver):
                     D[i, j, k] = self.particles[f, i].D[j, k]
             Jp[i] = self.particles[f, i].Jp
             active[i] = self.particles_ng[f, i].active
+            damage[i] = self.particles_ng[f, i].damage
 
     @ti.kernel
     def _kernel_set_state(
@@ -889,6 +894,7 @@ class MPMSolver(Solver):
         Jp: ti.types.ndarray(),
         active: ti.types.ndarray(),
         D: ti.types.ndarray(),
+        damage: ti.types.ndarray(),
     ):
         for i in range(self._n_particles):
             for j in ti.static(range(3)):
@@ -900,18 +906,19 @@ class MPMSolver(Solver):
                     self.particles[f, i].D[j, k] = D[i, j, k]
             self.particles[f, i].Jp = Jp[i]
             self.particles_ng[f, i].active = active[i]
+            self.particles_ng[f, i].damage = damage[i]
 
     def get_state(self, f):
         if self.is_active():
             state = MPMSolverState(self._scene)
-            self._kernel_get_state(f, state.pos, state.vel, state.C, state.F, state.Jp, state.active, state.D)
+            self._kernel_get_state(f, state.pos, state.vel, state.C, state.F, state.Jp, state.active, state.D, state.damage)
         else:
             state = None
         return state
 
     def set_state(self, f, state):
         if self.is_active():
-            self._kernel_set_state(f, state.pos, state.vel, state.C, state.F, state.Jp, state.active, state.D)
+            self._kernel_set_state(f, state.pos, state.vel, state.C, state.F, state.Jp, state.active, state.D, state.damage)
 
     @ti.kernel
     def _kernel_update_render_fields(self, f: ti.i32):
@@ -930,8 +937,8 @@ class MPMSolver(Solver):
                     self.particles[f, self.vverts_info.support_idxs[i][j]].pos * self.vverts_info.support_weights[i][j]
                 )
             self.vverts_render[i].pos = vvert_pos
-            self.particles_render[i].active = self.particles_ng[f, i].active
-            # self.vverts_render[i].active = self.particles_render[self.vverts_info.support_idxs[i][0]].active
+            # self.particles_render[i].active = self.particles_ng[f, i].active
+            self.vverts_render[i].active = self.particles_render[self.vverts_info.support_idxs[i][0]].active
 
     def update_render_fields(self):
         self._kernel_update_render_fields(self.sim.cur_substep_local)
