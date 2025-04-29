@@ -59,7 +59,7 @@ class Base(Material):
         return stress
     
     @ti.func
-    def update_damage(self, S):
+    def update_damage(self, S, D):
         max_principal_strain = ti.max(S[0, 0], S[1, 1], S[2, 2])
         damage = ti.max(0, ti.min(1.0, (max_principal_strain-1.5)/0.5))
         

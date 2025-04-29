@@ -5,3 +5,5 @@ from .liquid import Liquid
 from .muscle import Muscle
 from .sand import Sand
 from .snow import Snow
+from .human_muscle import HumanMuscle
+from .phasefield_neohookean import PhaseFieldNeoHookean
