@@ -320,8 +320,11 @@ class MPMSolver(Solver):
                     if self.particles_info[i].mat_idx == mat_idx:
                         self.particles_ng[f, i].damage = self._mats_update_damage[mat_idx](
                             S=self.particles[f, i].S,
+                            D=self.particles[f, i].D,
                         )
-                    if self.particles_ng[f, i].damage  >= 0.6:
+                    max_principal_strain = ti.max(self.particles[f, i].S[0, 0], self.particles[f, i].S[1, 1], self.particles[f, i].S[2, 2])
+                    damage = ti.max(0, ti.min(1.0, (max_principal_strain-1.5)/0.5))
+                    if damage > 1:
                         self.particles_ng[f, i].active = False
                 # A. update F (deformation gradient), S (Sigma from SVD(F), essentially represents volume) and Jp (volume compression ratio) based on material type
                 J = self.particles[f, i].S.determinant()
@@ -361,7 +364,7 @@ class MPMSolver(Solver):
                             D=self.particles[f, i].D,
                             # damage=self.particles_ng[f, i].damage,
                         )
-                stress *= (1 - self.particles_ng[f, i].damage)
+                # stress *= 1 - self.particles_ng[f, i].damage
                 stress = (-self.substep_dt * self._p_vol * 4 * self._inv_dx * self._inv_dx) * stress
                 affine = stress + self.particles_info[i].mass * self.particles[f, i].C
 
