@@ -49,7 +49,7 @@ class Elastic(Base):
         return stress
 
     @ti.func
-    def update_stress_neohooken(self, U, S, V, F_tmp, F_new, J, Jp, actu, m_dir):
+    def update_stress_neohooken(self, U, S, V, F_tmp, F_new, J, Jp, actu, m_dir, D):
         stress = self._mu * (F_tmp @ F_tmp.transpose()) + ti.Matrix.identity(gs.ti_float, 3) * (
             self._lam * ti.log(J) - self._mu
         )

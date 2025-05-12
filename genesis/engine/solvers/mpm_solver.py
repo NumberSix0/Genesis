@@ -319,13 +319,16 @@ class MPMSolver(Solver):
                 for mat_idx in ti.static(self._mats_idx):
                     if self.particles_info[i].mat_idx == mat_idx:
                         self.particles_ng[f, i].damage = self._mats_update_damage[mat_idx](
-                            S=self.particles[f, i].S,
+                            F_tmp=self.particles[f, i].F_tmp,
+                            J=self.particles[f, i].S.determinant(),
                             D=self.particles[f, i].D,
                         )
-                    max_principal_strain = ti.max(self.particles[f, i].S[0, 0], self.particles[f, i].S[1, 1], self.particles[f, i].S[2, 2])
-                    damage = ti.max(0, ti.min(1.0, (max_principal_strain-1.5)/0.5))
-                    if damage > 1:
+                    if self.particles_ng[f, i].damage < 0.02:
                         self.particles_ng[f, i].active = False
+                        self.particles[f, i].F_tmp = ti.Matrix.identity(gs.ti_float, 3)
+                        self.particles[f, i].F = ti.Matrix.identity(gs.ti_float, 3)
+                        self.particles[f, i].vel = ti.Vector.zero(gs.ti_float, 3)
+                        self.particles[f, i].pos = gu.ti_nowhere()
                 # A. update F (deformation gradient), S (Sigma from SVD(F), essentially represents volume) and Jp (volume compression ratio) based on material type
                 J = self.particles[f, i].S.determinant()
                 F_new = ti.Matrix.zero(gs.ti_float, 3, 3)
@@ -362,7 +365,7 @@ class MPMSolver(Solver):
                             actu=self.particles[f, i].actu,
                             m_dir=self.particles_info[i].muscle_direction,
                             D=self.particles[f, i].D,
-                            # damage=self.particles_ng[f, i].damage,
+                            damage=self.particles_ng[f, i].damage,
                         )
                 # stress *= 1 - self.particles_ng[f, i].damage
                 stress = (-self.substep_dt * self._p_vol * 4 * self._inv_dx * self._inv_dx) * stress
