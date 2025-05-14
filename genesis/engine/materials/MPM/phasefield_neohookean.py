@@ -119,8 +119,8 @@ class PhaseFieldNeoHookean(Elastic):
         
         # Consider strain rate magnitude for dynamic fracture (optional)
         # if D is not None:
-        #     strain_rate_magnitude = ti.sqrt((D * D).sum())
-        #     psi_pos += self._damage_rate * strain_rate_magnitude
+        #strain_rate_magnitude = ti.sqrt((D * D).sum())
+        #psi_pos += self._damage_rate * strain_rate_magnitude
         
         # Start with current values (these would be stored per particle in real implementation)
         H = self._damage_threshold
@@ -167,10 +167,8 @@ class PhaseFieldNeoHookean(Elastic):
         # while ensuring the sum equals the standard stress from elastic.py
         
         # First calculate F^T * F 
-        FTF = F_tmp.transpose() @ F_tmp
-        
-        # Trace of FTF
-        trFTF = FTF.trace()
+        # FTF = F_tmp.transpose() @ F_tmp
+        # trFTF = FTF.trace()  # 未使用
         
         # Calculate B = F * F^T
         B = F_tmp @ F_tmp.transpose()
@@ -186,8 +184,8 @@ class PhaseFieldNeoHookean(Elastic):
         # This ensures that dev_stress + vol_stress = standard_stress
         vol_stress = stress - dev_stress
         
-        dev_stress = self._mu * (F_tmp @ F_tmp.transpose())
-        vol_stress = ti.Matrix.identity(gs.ti_float, 3) * (self._lam * ti.log(J) - self._mu)
+        #dev_stress = self._mu * (F_tmp @ F_tmp.transpose())
+        #vol_stress = ti.Matrix.identity(gs.ti_float, 3) * (self._lam * ti.log(J) - self._mu)
         # Apply damage degradation based on Borden's approach:
         # g(c) * dev_stress + (J >= 1 ? g(c) * vol_stress : vol_stress)
         if J >= 1.0:

@@ -11,14 +11,14 @@ def main():
 
     scene = gs.Scene(
         sim_options=gs.options.SimOptions(
-            dt=8e-6,  # Smaller timestep for better numerical stability
+            dt=8e-5,  # Smaller timestep for better numerical stability
             substeps=10,
-            gravity=(0, 0, -9.8),
+            gravity=(0, 0, 0),
         ),
         mpm_options=gs.options.MPMOptions(
             lower_bound=[-1.0, -1.0, -1.0],
             upper_bound=[1.0, 1.2, 1.0],
-            particle_size=0.002,
+            # particle_size=0.002,
             grid_density=128,  # Higher resolution for better simulation quality
             enable_CPIC=False,  # Enable CPIC for better particle-particle coupling
         ),
@@ -47,7 +47,7 @@ def main():
             rho=7850,  # Steel density
         ),
         morph=gs.morphs.Sphere(
-            radius=0.002,
+            radius=0.0026,
             pos=(0.02, 1.0, 0.1),
         ),
         surface=gs.surfaces.Iron(
@@ -61,6 +61,13 @@ def main():
             E=0.8e6,  # Young's modulus
             nu=0.48,  # Poisson's ratio
             rho=1060.0,  # density (kg/m^3)
+            l0=0.001,  # characteristic length for phase field
+            residual_phase=0.02,  # residual stiffness for fully damaged material
+            damage_threshold=10.0,  # threshold strain energy for damage initiation
+            max_damage=1.0,  # maximum allowed damage value
+            damage_rate=15.0,  # rate of damage evolution
+            delete_threshold=0.0005,  # threshold for particle deletion
+            one_over_sigma_c=0.1,  # inverse of critical energy release rate
         ),
         morph=gs.morphs.Mesh(
             file="model/muscle.obj",
@@ -76,7 +83,7 @@ def main():
     bullet.set_dofs_velocity((0, 0, -696, 0, 0, 0))  # 1000 m/s in x direction
 
     # Main simulation loop
-    horizon = 3000
+    horizon = 600
 
     init_distance = [0]
     step_distance = [0]
