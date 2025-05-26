@@ -323,12 +323,12 @@ class MPMSolver(Solver):
                             J=self.particles[f, i].S.determinant(),
                             D=self.particles[f, i].D,
                         )
-                    if self.particles_ng[f, i].damage < 0.0075:
-                        self.particles_ng[f, i].active = False
-                        self.particles[f, i].F_tmp = ti.Matrix.identity(gs.ti_float, 3)
-                        self.particles[f, i].F = ti.Matrix.identity(gs.ti_float, 3)
-                        self.particles[f, i].vel = ti.Vector.zero(gs.ti_float, 3)
-                        self.particles[f, i].pos = gu.ti_nowhere()
+                        if self.particles_ng[f, i].damage < 0.0075:
+                            self.particles_ng[f, i].active = False
+                            self.particles[f, i].F_tmp = ti.Matrix.identity(gs.ti_float, 3)
+                            self.particles[f, i].F = ti.Matrix.identity(gs.ti_float, 3)
+                            self.particles[f, i].vel = ti.Vector.zero(gs.ti_float, 3)
+                            self.particles[f, i].pos = gu.ti_nowhere()
             if self.particles_ng[f, i].active:           
                 # A. update F (deformation gradient), S (Sigma from SVD(F), essentially represents volume) and Jp (volume compression ratio) based on material type
                 J = self.particles[f, i].S.determinant()
@@ -701,7 +701,7 @@ class MPMSolver(Solver):
             self.particles[f, i_global].actu = gs.ti_float(0.0)
 
             self.particles_ng[f, i_global].active = active
-            self.particles_ng[f, i_global].damage = 0
+            self.particles_ng[f, i_global].damage = 1
 
             self.particles_info[i_global].mat_idx = mat_idx
             self.particles_info[i_global].default_Jp = mat_default_Jp
